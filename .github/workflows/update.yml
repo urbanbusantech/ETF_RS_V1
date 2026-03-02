@@ -1,4 +1,4 @@
-name: Update ETF Data for Streamlit
+name: Update ETF Data for Streamlit & Blog
 
 on:
   schedule:
@@ -28,7 +28,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: 데이터 업데이트 스크립트 실행
+      - name: 데이터 업데이트 스크립트 및 블로그 자동 포스팅 실행
+        env: # 💡 [바로 이 부분입니다!] 깃허브 금고에 있는 비밀키를 파이썬에게 전달합니다.
+          BLOGGER_BLOG_ID: ${{ secrets.BLOGGER_BLOG_ID }}
+          BLOGGER_CLIENT_ID: ${{ secrets.BLOGGER_CLIENT_ID }}
+          BLOGGER_CLIENT_SECRET: ${{ secrets.BLOGGER_CLIENT_SECRET }}
+          BLOGGER_REFRESH_TOKEN: ${{ secrets.BLOGGER_REFRESH_TOKEN }}
         run: python update_data.py
 
       - name: 생성된 CSV 파일 깃허브에 자동 커밋 & 푸시
