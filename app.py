@@ -22,6 +22,7 @@ st.title("🚀 대한민국 상장 주식형 ETF 모멘텀 대시보드")
 st.markdown(f"""
 마크 미너비니의 상대강도(RS)를 기준으로 시장의 주도주를 분석한 결과입니다.  
 * 💡 **업데이트 일자:** {today_date} (매일 장 마감 후 자동 갱신)
+* 📝 **이전 분석 이력 확인:** [제 블로그(Journey with Gardens)를 방문해 주세요!](https://apple.journeywithgardens.com/)
 """)
 
 csv_path = 'etf_data.csv'
