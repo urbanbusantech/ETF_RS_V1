@@ -192,7 +192,9 @@ def export_data(df, bm_1m, bm_3m, bm_1y):
     </div>
     """
         
-    post_to_blogger(post_title, html_content)
+    # [수정된 부분] 라벨을 리스트 형태로 정의하고, post_to_blogger 함수에 함께 전달합니다.
+    category_labels = ["상대강도"]
+    post_to_blogger(post_title, html_content, category_labels)
 
 if __name__ == "__main__":
     equity_df = get_equity_etfs()
