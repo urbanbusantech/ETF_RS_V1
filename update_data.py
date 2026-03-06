@@ -94,7 +94,7 @@ def calculate_minervini_rs(equity_df):
     
     return result_df, benchmark_1m_ret, benchmark_3m_ret, benchmark_1y_ret
 
-def post_to_blogger(title, html_content):
+def post_to_blogger(title, html_content, labels=None):
     """Blogger API를 사용하여 글을 게시합니다."""
     blog_id = os.environ.get('BLOGGER_BLOG_ID')
     client_id = os.environ.get('BLOGGER_CLIENT_ID')
@@ -108,7 +108,18 @@ def post_to_blogger(title, html_content):
     try:
         creds = Credentials(token=None, refresh_token=refresh_token, token_uri='https://oauth2.googleapis.com/token', client_id=client_id, client_secret=client_secret)
         service = build('blogger', 'v3', credentials=creds)
-        body = {"kind": "blogger#post", "title": title, "content": html_content}
+        
+        # 기본 본문 구성
+        body = {
+            "kind": "blogger#post", 
+            "title": title, 
+            "content": html_content
+        }
+        
+        # 전달받은 라벨(태그)이 있을 경우 본문에 추가
+        if labels:
+            body["labels"] = labels
+            
         service.posts().insert(blogId=blog_id, body=body, isDraft=False).execute()
         print("✅ 구글 블로그 포스팅 성공!")
     except Exception as e:
