@@ -4,8 +4,11 @@ update_data.py
 [기존 유지] ETF 상대강도 분석 (FinanceDataReader)
             → etf_data.csv 저장 + 블로거 포스팅
 
-[신규 추가] 미너비니 SEPA + VCP 코스피 종목 스캐너 (한투 API)
+[신규 추가] 미너비니 SEPA + VCP 스캐너 (한투 API)
+            → 코스피 상위 200 + 코스닥 상위 200 각각 별도 포스팅
             → 블로거 포스팅 + 텔레그램 전송
+
+※ 테스트 모드: 휴장일 체크 비활성화 (정상 동작 확인 후 재활성화)
 
 GitHub Secrets 추가 필요:
   KIS_APP_KEY           한투 실전 앱키
@@ -313,15 +316,20 @@ def _is_market_open_today() -> bool:
 # ── ③ 미너비니 스캐너 — 한투 API 데이터 수집 ──
 # ══════════════════════════════════════════════════════════════
 
-def _get_kospi_top(top_n: int = 200) -> list:
-    """코스피 시가총액 상위 종목 목록 수집"""
+def _get_market_top(market: str = "kospi", top_n: int = 200) -> list:
+    """
+    시가총액 상위 종목 목록 수집
+    market: "kospi" (코스피) 또는 "kosdaq" (코스닥)
+    """
+    # 코스피: FID_INPUT_ISCD=0001, 코스닥: FID_INPUT_ISCD=1001
+    iscd = "0001" if market == "kospi" else "1001"
     data = _kis_get(
         "/uapi/domestic-stock/v1/ranking/market-cap",
         "FHPST01710000",
         {
             "FID_COND_MRKT_DIV_CODE": "J",
             "FID_COND_SCR_DIV_CODE":  "20171",
-            "FID_INPUT_ISCD":         "0001",
+            "FID_INPUT_ISCD":         iscd,
             "FID_DIV_CLS_CODE":       "0",
             "FID_BLNG_CLS_CODE":      "0",
             "FID_TRGT_CLS_CODE":      "0",
@@ -335,9 +343,10 @@ def _get_kospi_top(top_n: int = 200) -> list:
     stocks = []
     for item in data.get("output", []):
         stocks.append({
-            "rank": item.get("data_rank", ""),
-            "code": item.get("stck_shrn_iscd", ""),
-            "name": item.get("hts_kor_isnm", ""),
+            "rank":   item.get("data_rank", ""),
+            "code":   item.get("stck_shrn_iscd", ""),
+            "name":   item.get("hts_kor_isnm", ""),
+            "market": market,
         })
     return stocks[:top_n]
 
@@ -561,22 +570,27 @@ def _volume_surge(rows: list, mult: float = 1.4) -> bool:
 # ── ⑤ 미너비니 스캔 실행 ──
 # ══════════════════════════════════════════════════════════════
 
-def run_minervini_scan(top_n: int = 200) -> dict:
+def run_minervini_scan(market: str = "kospi", top_n: int = 200) -> dict:
     """
-    코스피 시가총액 상위 top_n 종목 대상 미너비니 스캔
-    반환: {date, scanned, trend_template, vcp, near_high_breakout}
+    코스피 또는 코스닥 시가총액 상위 top_n 종목 대상 미너비니 스캔
+    market: "kospi" 또는 "kosdaq"
+    반환: {date, market, market_label, scanned, trend_template, vcp, near_high_breakout}
     """
-    today = datetime.now().strftime("%Y-%m-%d")
-    print(f"\n[미너비니 스캐너] {today} 스캔 시작 — 코스피 상위 {top_n}종목")
+    market_label = "코스피" if market == "kospi" else "코스닥"
+    # RS 기준 지수: 코스피=0001, 코스닥=1001
+    index_code   = "0001"  if market == "kospi" else "1001"
 
-    # 코스피 지수 데이터 (RS 계산 기준)
+    today = datetime.now().strftime("%Y-%m-%d")
+    print(f"\n[미너비니 스캐너] {today} {market_label} 스캔 시작 — 상위 {top_n}종목")
+
+    # 기준 지수 데이터 (RS 계산용)
     try:
-        kospi_rows = _get_ohlcv_kis("0001", 260)
+        kospi_rows = _get_ohlcv_kis(index_code, 260)
     except Exception as e:
-        print(f"  ⚠️ 코스피 지수 조회 실패({e}) — RS 계산 스킵")
+        print(f"  ⚠️ {market_label} 지수 조회 실패({e}) — RS 계산 스킵")
         kospi_rows = []
 
-    stocks = _get_kospi_top(top_n)
+    stocks = _get_market_top(market, top_n)
     print(f"  종목 목록 수집 완료: {len(stocks)}개")
 
     tt_pass, vcp_pass, breakout_pass = [], [], []
@@ -629,6 +643,8 @@ def run_minervini_scan(top_n: int = 200) -> dict:
 
     return {
         "date":               today,
+        "market":             market,
+        "market_label":       market_label,
         "scanned":            len(stocks),
         "trend_template":     tt_pass,
         "vcp":                vcp_pass,
@@ -653,7 +669,8 @@ def _build_minervini_html(result: dict) -> tuple:
     vcp     = result["vcp"]
     nh      = result["near_high_breakout"]
 
-    post_title = f"📊 미너비니 SEPA 스캐너 ({date}) — VCP {len(vcp)}종목 · TT {len(tt)}종목"
+    market_label = result.get("market_label", "코스피")
+    post_title = f"📊 미너비니 SEPA 스캐너 [{market_label}] ({date}) — VCP {len(vcp)}종목 · TT {len(tt)}종목"
 
     def stock_rows_html(stocks, show_vcp=False) -> str:
         rows = ""
@@ -715,7 +732,7 @@ def _build_minervini_html(result: dict) -> tuple:
           <div style="font-size:1.8rem;font-weight:700;color:{c}">{n}</div>
           <div style="font-size:0.75rem;color:#888">{l}</div></div>'''
           for n, l, c in [
-            (scanned,    "분석 종목",       "#3498db"),
+            (scanned,    f"{market_label} 분석", "#3498db"),
             (len(tt),    "TrendTemplate",  "#8e44ad"),
             (len(vcp),   "VCP 패턴",       "#27ae60"),
             (len(nh),    "신고가+거래량",   "#e74c3c"),
@@ -763,7 +780,7 @@ def _build_telegram_message(result: dict) -> str:
 
     lines = [
         "📊 <b>미너비니 SEPA 스캐너 리포트</b>",
-        f"📅 {date}  |  코스피 상위 {result['scanned']}종목 분석",
+        f"📅 {date}  |  {result.get('market_label','코스피')} 상위 {result['scanned']}종목 분석",
         f"✅ TrendTemplate <b>{len(tt)}</b>  🌀 VCP <b>{len(vcp)}</b>  🚀 신고가+거래량 <b>{len(nh)}</b>",
         "━━━━━━━━━━━━━━━━━━━━",
     ]
@@ -864,8 +881,10 @@ def publish_minervini_report(result: dict):
     """미너비니 스캔 결과 → 블로거 + 텔레그램 + 티스토리 배포"""
     post_title, html_content = _build_minervini_html(result)
 
-    # 블로거 포스팅 (기존 함수 재사용)
-    post_to_blogger(post_title, html_content, labels=["미너비니", "SEPA", "VCP"])
+    # 블로거 포스팅 (기존 함수 재사용) — 라벨: 미너비니 고정 + 시장명
+    market_label = result.get("market_label", "코스피")
+    labels = ["미너비니", "SEPA", "VCP", market_label]
+    post_to_blogger(post_title, html_content, labels=labels)
 
     # 텔레그램 전송
     _send_telegram(_build_telegram_message(result))
@@ -891,19 +910,37 @@ if __name__ == "__main__":
 
     # ── [신규] 미너비니 단위 종목 스캐너 ─────────────────────
     print("\n" + "=" * 60)
-    print("[2/2] 미너비니 SEPA 종목 스캐너 시작")
+    print("[2/3] 미너비니 SEPA 종목 스캐너 시작")
     print("=" * 60)
 
     # 한투 API 키가 없으면 스캐너 건너뜀 (기존 ETF 작업에 영향 없음)
     if not os.environ.get("KIS_APP_KEY") or not os.environ.get("KIS_APP_SECRET"):
         print("💡 KIS_APP_KEY / KIS_APP_SECRET 없음 — 미너비니 스캐너 건너뜀")
-    elif not _is_market_open_today():
-        print("💡 오늘은 장 휴장일 — 미너비니 스캐너 건너뜀")
     else:
+        # ※ 테스트 모드: 휴장일 체크 비활성화
+        # ※ 정상 동작 확인 후 아래 주석을 해제하세요:
+        # if not _is_market_open_today():
+        #     print("💡 오늘은 장 휴장일 — 미너비니 스캐너 건너뜀")
+        # else:
+
+        # ── 코스피 상위 200 ──
+        print("\n" + "-" * 40)
+        print("[2/3] 코스피 상위 200종목 스캔")
+        print("-" * 40)
         try:
-            scan_result = run_minervini_scan(top_n=200)
-            publish_minervini_report(scan_result)
-            print("✅ 미너비니 스캐너 완료")
+            kospi_result = run_minervini_scan(market="kospi", top_n=200)
+            publish_minervini_report(kospi_result)
+            print("✅ 코스피 스캔 완료")
         except Exception as e:
-            # 스캐너 실패해도 기존 ETF 작업 결과에 영향 없음
-            print(f"❌ 미너비니 스캐너 오류: {e}")
+            print(f"❌ 코스피 스캐너 오류: {e}")
+
+        # ── 코스닥 상위 200 ──
+        print("\n" + "-" * 40)
+        print("[3/3] 코스닥 상위 200종목 스캔")
+        print("-" * 40)
+        try:
+            kosdaq_result = run_minervini_scan(market="kosdaq", top_n=200)
+            publish_minervini_report(kosdaq_result)
+            print("✅ 코스닥 스캔 완료")
+        except Exception as e:
+            print(f"❌ 코스닥 스캐너 오류: {e}")
