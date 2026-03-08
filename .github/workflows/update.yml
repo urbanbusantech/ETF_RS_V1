@@ -2,7 +2,7 @@ name: Update ETF Data for Streamlit & Blog
 
 on:
   schedule:
-    - cron: '0 8 * * 1-5' # 한국 시간 오후 5시
+    - cron: '0 7 * * 1-5' # 한국 시간 오후 5시
   workflow_dispatch: 
 
 permissions:
@@ -29,11 +29,22 @@ jobs:
           pip install -r requirements.txt
 
       - name: 데이터 업데이트 스크립트 및 블로그 자동 포스팅 실행
-        env: # 💡 [바로 이 부분입니다!] 깃허브 금고에 있는 비밀키를 파이썬에게 전달합니다.
+        env:
+          # ── 기존 Blogger 시크릿 (원본 유지) ──
           BLOGGER_BLOG_ID: ${{ secrets.BLOGGER_BLOG_ID }}
           BLOGGER_CLIENT_ID: ${{ secrets.BLOGGER_CLIENT_ID }}
           BLOGGER_CLIENT_SECRET: ${{ secrets.BLOGGER_CLIENT_SECRET }}
           BLOGGER_REFRESH_TOKEN: ${{ secrets.BLOGGER_REFRESH_TOKEN }}
+
+          # ── 미너비니 스캐너용 신규 시크릿 ──
+          # GitHub 저장소 → Settings → Secrets → Actions 에서 등록
+          KIS_APP_KEY: ${{ secrets.KIS_APP_KEY }}             # 한투 실전 앱키
+          KIS_APP_SECRET: ${{ secrets.KIS_APP_SECRET }}       # 한투 실전 시크릿
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}       # 텔레그램 봇 토큰
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}   # 수신 채팅 ID
+          TISTORY_ACCESS_TOKEN: ${{ secrets.TISTORY_ACCESS_TOKEN }}  # 티스토리 (선택)
+          TISTORY_BLOG_NAME: ${{ secrets.TISTORY_BLOG_NAME }}        # 티스토리 (선택)
+
         run: python update_data.py
 
       - name: 생성된 CSV 파일 깃허브에 자동 커밋 & 푸시
