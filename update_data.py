@@ -669,7 +669,7 @@ def run_minervini_scan(market: str = "kospi", top_n: int = 200) -> dict:
     stocks = _get_market_top(market, top_n)
     print(f"  종목 목록 수집 완료: {len(stocks)}개")
 
-    tt_pass, vcp_pass, breakout_pass = [], [], []
+    tt_pass, vcp_pass, breakout_pass, all_pass = [], [], [], []
 
     for i, st in enumerate(stocks):
         code, name = st["code"], st["name"]
@@ -681,12 +681,22 @@ def run_minervini_scan(market: str = "kospi", top_n: int = 200) -> dict:
 
             # Trend Template
             tt = _check_trend_template(rows)
+
+            # RS 점수
+            rs = _calc_rs(rows, kospi_rows) if kospi_rows else None
+
+            # 원본 테이블용: TT 통과 여부와 무관하게 모든 종목 기록
+            if tt["detail"]:   # detail이 있으면(데이터 충분) 원본에 포함
+                all_pass.append({
+                    **st, "rs": rs,
+                    "tt_detail": tt["detail"],
+                    "criteria":  tt["criteria"],
+                })
+
             if not tt["pass"]:
                 time.sleep(0.05)
                 continue
 
-            # RS 점수
-            rs = _calc_rs(rows, kospi_rows) if kospi_rows else None
             if rs is not None and rs < 70:
                 time.sleep(0.05)
                 continue
@@ -725,6 +735,7 @@ def run_minervini_scan(market: str = "kospi", top_n: int = 200) -> dict:
         "trend_template":     tt_pass,
         "vcp":                vcp_pass,
         "near_high_breakout": breakout_pass,
+        "all_stocks":         all_pass,   # 원본 테이블용 전체 분석 종목
     }
 
 
@@ -747,6 +758,44 @@ def _build_minervini_html(result: dict) -> tuple:
 
     market_label = result.get("market_label", "코스피")
     post_title = f"📊 미너비니 SEPA 스캐너 [{market_label}] ({date}) — VCP {len(vcp)}종목 · TT {len(tt)}종목"
+
+    # 원본 테이블용: 전체 종목(TT 통과 여부 포함) 한 행 생성
+    tt_codes = {s["code"] for s in tt}
+
+    def _raw_stock_row(s) -> str:
+        d         = s.get("tt_detail", {})
+        passed    = s["code"] in tt_codes
+        pct_color = "#c0392b" if float(d.get("pct_from_52w_high", 0)) > -5 else "#2c3e50"
+        tt_badge  = (
+            '<span style="background:#e8f8f0;color:#27ae60;border:1px solid #b2dfcc;'
+            'border-radius:3px;padding:1px 6px;font-size:0.82em;font-weight:600">✓ 통과</span>'
+            if passed else
+            '<span style="background:#f5f5f5;color:#aaa;border:1px solid #ddd;'
+            'border-radius:3px;padding:1px 6px;font-size:0.82em">✗</span>'
+        )
+        rs_val  = s.get("rs", "—")
+        rs_html = (f'<b style="color:#c0392b">{rs_val}</b>'
+                   if rs_val and str(rs_val) != "—" and float(rs_val) >= 70
+                   else str(rs_val))
+        return f"""
+          <tr style="background:{'#f0fff4' if passed else '#fff'}">
+            <td style="border:1px solid #e0e0e0;padding:7px;text-align:center">{s.get("rank","—")}</td>
+            <td style="border:1px solid #e0e0e0;padding:7px;text-align:left">
+              <b>{s["name"]}</b><br>
+              <a href="https://finance.naver.com/item/fchart.naver?code={s["code"]}"
+                 target="_blank" style="color:#3498db;font-size:0.82em">{s["code"]}</a>
+            </td>
+            <td style="border:1px solid #e0e0e0;padding:7px;text-align:right;font-family:monospace">{_fmt_n(d.get("price"))}원</td>
+            <td style="border:1px solid #e0e0e0;padding:7px;text-align:center;color:{pct_color}">{d.get("pct_from_52w_high",0):+.1f}%</td>
+            <td style="border:1px solid #e0e0e0;padding:7px;text-align:right;font-family:monospace">{_fmt_n(d.get("ma50"))}</td>
+            <td style="border:1px solid #e0e0e0;padding:7px;text-align:right;font-family:monospace">{_fmt_n(d.get("ma150"))}</td>
+            <td style="border:1px solid #e0e0e0;padding:7px;text-align:right;font-family:monospace">{_fmt_n(d.get("ma200"))}</td>
+            <td style="border:1px solid #e0e0e0;padding:7px;text-align:center">{rs_html}</td>
+            <td style="border:1px solid #e0e0e0;padding:7px;text-align:center">{tt_badge}</td>
+          </tr>"""
+
+    # 원본 테이블 대상: TT 통과 + 미통과 전체 (tt_detail 있는 것만)
+    all_stocks = result.get("all_stocks", tt)   # all_stocks 키 없으면 tt로 대체
 
     def stock_rows_html(stocks, show_vcp=False) -> str:
         rows = ""
@@ -842,6 +891,38 @@ def _build_minervini_html(result: dict) -> tuple:
       {section_html(f"🌀 VCP 패턴 감지 종목 ({len(vcp)}개)", vcp, show_vcp=True)}
       {section_html(f"🚀 52주 신고가 근접 + 거래량 급증 ({len(nh)}개)", nh)}
       {section_html(f"📋 Trend Template 통과 전체 ({len(tt)}개)", tt)}
+
+      <!-- 전체 분석 원본 테이블 -->
+      <h3 style="color:#2c3e50;padding-left:10px;margin-top:32px;margin-bottom:10px">
+        📂 전체 분석 원본 데이터 ({len(all_stocks)}종목)
+      </h3>
+      <div style="padding:10px 12px 10px 15px;border-left:4px solid #95a5a6;
+                  background:#fafafa;margin-bottom:12px;font-size:0.88em;color:#666">
+        스캔 대상 {market_label} 상위 {result["scanned"]}종목 중 Trend Template 분석을
+        완료한 전체 종목 원본 데이터입니다. (Trend Template 미통과 종목 포함)
+      </div>
+      <div style="overflow-x:auto">
+      <table border="1" cellpadding="7" cellspacing="0"
+             style="border-collapse:collapse;width:100%;font-size:0.85em;
+                    min-width:700px;border:1px solid #e0e0e0">
+        <thead style="background:#f8f9fa;color:#2c3e50">
+          <tr>
+            <th style="border:1px solid #e0e0e0;padding:8px">순위</th>
+            <th style="border:1px solid #e0e0e0;padding:8px">종목</th>
+            <th style="border:1px solid #e0e0e0;padding:8px">현재가</th>
+            <th style="border:1px solid #e0e0e0;padding:8px">52주고가대비</th>
+            <th style="border:1px solid #e0e0e0;padding:8px">MA50</th>
+            <th style="border:1px solid #e0e0e0;padding:8px">MA150</th>
+            <th style="border:1px solid #e0e0e0;padding:8px">MA200</th>
+            <th style="border:1px solid #e0e0e0;padding:8px">RS</th>
+            <th style="border:1px solid #e0e0e0;padding:8px">TT통과</th>
+          </tr>
+        </thead>
+        <tbody>
+          {"".join(_raw_stock_row(s) for s in all_stocks)}
+        </tbody>
+      </table>
+      </div>
 
       <div style="margin-top:24px;background:#fff3cd;border:1px solid #ffc107;
                   border-radius:4px;padding:10px 14px;font-size:0.8em;color:#666">
@@ -964,9 +1045,7 @@ def publish_minervini_report(result: dict):
     post_title, html_content = _build_minervini_html(result)
 
     # 블로거 포스팅 (기존 함수 재사용) — 라벨: 미너비니 고정 + 시장명
-    market_label = result.get("market_label", "코스피")
-    labels = ["미너비니", "SEPA", "VCP", market_label]
-    post_to_blogger(post_title, html_content, labels=labels)
+    post_to_blogger(post_title, html_content, labels=["미너비니"])
 
     # 텔레그램 전송
     _send_telegram(_build_telegram_message(result))
