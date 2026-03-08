@@ -427,28 +427,10 @@ def _get_market_top(market: str = "kospi", top_n: int = 200) -> list:
 
     print(f"  [{market_label}] 최종 {len(unique[:top_n])}개 종목 수집 완료")
     return unique[:top_n]
-def _get_ohlcv_kis(code: str, days: int = 260) -> list:
-    """
-    한투 API 일별 OHLCV 조회
-    반환: [{"date","open","high","low","close","volume"}, ...] 최신→과거 순
-    """
-    end_dt   = datetime.now().strftime("%Y%m%d")
-    start_dt = (datetime.now() - timedelta(days=days * 2)).strftime("%Y%m%d")
-
-    data = _kis_get(
-        "/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice",
-        "FHKST03010100",
-        {
-            "FID_COND_MRKT_DIV_CODE": "J",
-            "FID_INPUT_ISCD":         code,
-            "FID_INPUT_DATE_1":       start_dt,
-            "FID_INPUT_DATE_2":       end_dt,
-            "FID_PERIOD_DIV_CODE":    "D",
-            "FID_ORG_ADJ_PRC":        "0",
-        }
-    )
+def _parse_ohlcv_items(items: list) -> list:
+    """한투 OHLCV 응답 아이템 → 표준 dict 변환"""
     rows = []
-    for item in data.get("output2", []):
+    for item in items:
         try:
             rows.append({
                 "date":   item.get("stck_bsop_date", ""),
@@ -460,8 +442,70 @@ def _get_ohlcv_kis(code: str, days: int = 260) -> list:
             })
         except Exception:
             continue
-    valid = [r for r in rows if r["close"] > 0]
-    return valid[:days]
+    return [r for r in rows if r["close"] > 0]
+
+
+def _get_ohlcv_kis(code: str, days: int = 260) -> list:
+    """
+    한투 API 일별 OHLCV 조회 — 분할 호출로 days 거래일 수집
+    반환: [{"date","open","high","low","close","volume"}, ...] 최신→과거 순
+
+    ※ FHKST03010100은 1회 호출에 최대 100건 반환.
+       days=260이면 3회 분할 호출 (100+100+60).
+       응답 키는 output2 우선, 없으면 output으로 폴백.
+    """
+    all_rows  = []
+    end_dt    = datetime.now()
+    CHUNK     = 100   # 1회 최대 반환 건수
+
+    while len(all_rows) < days:
+        end_str   = end_dt.strftime("%Y%m%d")
+        # 충분히 넉넉한 시작일 (거래일 기준이 아닌 캘린더 기준이므로 1.8배 여유)
+        start_str = (end_dt - timedelta(days=CHUNK * 2)).strftime("%Y%m%d")
+
+        try:
+            data = _kis_get(
+                "/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice",
+                "FHKST03010100",
+                {
+                    "FID_COND_MRKT_DIV_CODE": "J",
+                    "FID_INPUT_ISCD":         code,
+                    "FID_INPUT_DATE_1":       start_str,
+                    "FID_INPUT_DATE_2":       end_str,
+                    "FID_PERIOD_DIV_CODE":    "D",
+                    "FID_ORG_ADJ_PRC":        "0",
+                }
+            )
+        except Exception as e:
+            print(f"    ⚠️ OHLCV 조회 오류({code}): {e}")
+            break
+
+        # output2 우선, 없으면 output 시도
+        items = data.get("output2") or data.get("output") or []
+        # output이 dict(단건)인 경우 리스트로 감쌈
+        if isinstance(items, dict):
+            items = [items]
+
+        chunk_rows = _parse_ohlcv_items(items)
+        if not chunk_rows:
+            break  # 더 이상 데이터 없음
+
+        # 중복 날짜 제거 후 추가 (날짜 내림차순 유지)
+        existing_dates = {r["date"] for r in all_rows}
+        new_rows = [r for r in chunk_rows if r["date"] not in existing_dates]
+        if not new_rows:
+            break
+
+        all_rows.extend(new_rows)
+        # 다음 구간: 수집된 가장 오래된 날짜의 전날부터
+        oldest = min(all_rows, key=lambda x: x["date"])["date"]
+        end_dt = datetime.strptime(oldest, "%Y%m%d") - timedelta(days=1)
+
+        time.sleep(0.05)
+
+    # 날짜 내림차순 정렬 (최신→과거) 후 days개 반환
+    all_rows.sort(key=lambda x: x["date"], reverse=True)
+    return all_rows[:days]
 
 
 # ══════════════════════════════════════════════════════════════
