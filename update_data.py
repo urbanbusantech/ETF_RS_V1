@@ -486,8 +486,8 @@ def _check_trend_template(rows: list) -> dict:
       6. 현재가 ≥ 52주 저가 × 1.30
       7. 현재가 ≤ 52주 고가 × 1.25
     """
-    if len(rows) < 200:
-        return {"pass": False, "detail": {}}
+    if len(rows) < 180:
+        return {"pass": False, "criteria": {}, "detail": {}}
 
     closes = [r["close"] for r in rows]
     highs  = [r["high"]  for r in rows]
@@ -675,7 +675,10 @@ def run_minervini_scan(market: str = "kospi", top_n: int = 200) -> dict:
         code, name = st["code"], st["name"]
         try:
             rows = _get_ohlcv_kis(code, 260)
-            if len(rows) < 200:
+            # 첫 3개 종목은 수신 데이터 수를 로그로 확인
+            if i < 3:
+                print(f"  [진단] {name}({code}) OHLCV 수신: {len(rows)}개")
+            if len(rows) < 180:   # 180 거래일 미만이면 스킵 (신규 상장 등)
                 time.sleep(0.05)
                 continue
 
@@ -685,12 +688,13 @@ def run_minervini_scan(market: str = "kospi", top_n: int = 200) -> dict:
             # RS 점수
             rs = _calc_rs(rows, kospi_rows) if kospi_rows else None
 
-            # 원본 테이블용: TT 통과 여부와 무관하게 모든 종목 기록
-            if tt["detail"]:   # detail이 있으면(데이터 충분) 원본에 포함
+            # 원본 테이블용: TT 통과 여부와 무관하게 모든 종목 기록 (detail 있는 것만)
+            if tt.get("detail"):
                 all_pass.append({
                     **st, "rs": rs,
                     "tt_detail": tt["detail"],
-                    "criteria":  tt["criteria"],
+                    "criteria":  tt.get("criteria", {}),
+                    "tt_pass":   tt["pass"],
                 })
 
             if not tt["pass"]:
@@ -850,17 +854,18 @@ def _build_minervini_html(result: dict) -> tuple:
                 color:#333;max-width:1000px;margin:0 auto;padding:0 10px">
 
       <!-- KPI 요약 -->
-      <div style="display:flex;gap:12px;flex-wrap:wrap;margin:16px 0">
+      <div style="display:flex;gap:10px;flex-wrap:nowrap;margin:16px 0;width:100%;box-sizing:border-box">
         {''.join(f'''<div style="background:#f8f9fa;border:1px solid #e0e0e0;
                       border-top:3px solid {c};border-radius:6px;
-                      padding:10px 18px;min-width:120px;text-align:center">
-          <div style="font-size:1.8rem;font-weight:700;color:{c}">{n}</div>
-          <div style="font-size:0.75rem;color:#888">{l}</div></div>'''
+                      flex:1 1 0;min-width:0;padding:12px 8px;
+                      text-align:center;box-sizing:border-box">
+          <div style="font-size:1.8rem;font-weight:700;color:{c};line-height:1.1">{n}</div>
+          <div style="font-size:0.75rem;color:#888;margin-top:4px;white-space:nowrap">{l}</div></div>'''
           for n, l, c in [
             (scanned,    f"{market_label} 분석", "#3498db"),
-            (len(tt),    "TrendTemplate",  "#8e44ad"),
-            (len(vcp),   "VCP 패턴",       "#27ae60"),
-            (len(nh),    "신고가+거래량",   "#e74c3c"),
+            (len(tt),    "TrendTemplate",        "#8e44ad"),
+            (len(vcp),   "VCP 패턴",             "#27ae60"),
+            (len(nh),    "신고가+거래량",         "#e74c3c"),
           ])}
       </div>
 
@@ -944,8 +949,10 @@ def _build_telegram_message(result: dict) -> str:
     lines = [
         "📊 <b>미너비니 SEPA 스캐너 리포트</b>",
         f"📅 {date}  |  {result.get('market_label','코스피')} 상위 {result['scanned']}종목 분석",
-        f"✅ TrendTemplate <b>{len(tt)}</b>  🌀 VCP <b>{len(vcp)}</b>  🚀 신고가+거래량 <b>{len(nh)}</b>",
         "━━━━━━━━━━",
+        f"🌀 VCP 패턴 ({len(vcp)})",
+        f"🚀 신고가+거래량 ({len(nh)})",
+        f"📋 TrendTemplate ({len(tt)})",
     ]
 
     if vcp:
@@ -960,8 +967,6 @@ def _build_telegram_message(result: dict) -> str:
                 f"{_fmt_n(d.get('price'))}원  RS {s.get('rs','—')}\n"
                 f"    되돌림: {pb}  |  마지막 {vd.get('last_pct','—')}%  {bv}"
             )
-    else:
-        lines.append("\n🌀 <b>VCP 패턴</b> — 해당 없음")
 
     if nh:
         lines.append(f"\n🚀 <b>52주 신고가 근접+거래량 ({len(nh)}종목)</b>")
@@ -973,8 +978,6 @@ def _build_telegram_message(result: dict) -> str:
                 f"고가대비 {d.get('pct_from_52w_high',0):+.1f}%  "
                 f"RS {s.get('rs','—')}"
             )
-    else:
-        lines.append("\n🚀 <b>신고가+거래량</b> — 해당 없음")
 
     lines.append(f"\n📋 <b>TrendTemplate 통과</b> ({len(tt)}종목)")
     for s in tt[:10]:
@@ -984,10 +987,6 @@ def _build_telegram_message(result: dict) -> str:
     if len(tt) > 10:
         lines.append(f"  … 외 {len(tt)-10}개")
 
-    lines += [
-        "\n━━━━━━━━━━",
-        "⚠️ 참고용 정보. 투자 권유 아님.",
-    ]
     return "\n".join(lines)
 
 
