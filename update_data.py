@@ -670,6 +670,7 @@ def run_minervini_scan(market: str = "kospi", top_n: int = 200) -> dict:
     print(f"  종목 목록 수집 완료: {len(stocks)}개")
 
     tt_pass, vcp_pass, breakout_pass, all_pass = [], [], [], []
+    tt_codes = set()   # TT 통과 종목 코드 빠른 조회용
 
     for i, st in enumerate(stocks):
         code, name = st["code"], st["name"]
@@ -678,29 +679,38 @@ def run_minervini_scan(market: str = "kospi", top_n: int = 200) -> dict:
             # 첫 3개 종목은 수신 데이터 수를 로그로 확인
             if i < 3:
                 print(f"  [진단] {name}({code}) OHLCV 수신: {len(rows)}개")
-            if len(rows) < 180:   # 180 거래일 미만이면 스킵 (신규 상장 등)
+
+            # ── 데이터 부족: raw 테이블에는 기본 정보만 넣고 계속 ──
+            if len(rows) < 180:
+                all_pass.append({
+                    **st, "rs": None,
+                    "tt_detail": {},
+                    "criteria":  {},
+                    "tt_pass":   False,
+                    "data_ok":   False,
+                })
                 time.sleep(0.05)
                 continue
 
-            # Trend Template
+            # Trend Template + RS 계산
             tt = _check_trend_template(rows)
-
-            # RS 점수
             rs = _calc_rs(rows, kospi_rows) if kospi_rows else None
 
-            # 원본 테이블용: TT 통과 여부와 무관하게 모든 종목 기록 (detail 있는 것만)
-            if tt.get("detail"):
-                all_pass.append({
-                    **st, "rs": rs,
-                    "tt_detail": tt["detail"],
-                    "criteria":  tt.get("criteria", {}),
-                    "tt_pass":   tt["pass"],
-                })
+            # ── 전체 원본 테이블에 무조건 추가 (200종목 전부) ──
+            all_pass.append({
+                **st, "rs": rs,
+                "tt_detail": tt.get("detail", {}),
+                "criteria":  tt.get("criteria", {}),
+                "tt_pass":   tt["pass"],
+                "data_ok":   True,
+            })
 
+            # TT 미통과 → VCP/신고가 계산 스킵
             if not tt["pass"]:
                 time.sleep(0.05)
                 continue
 
+            # RS 필터
             if rs is not None and rs < 70:
                 time.sleep(0.05)
                 continue
@@ -708,6 +718,7 @@ def run_minervini_scan(market: str = "kospi", top_n: int = 200) -> dict:
             base = {**st, "rs": rs, "tt_detail": tt["detail"],
                     "criteria": tt["criteria"]}
             tt_pass.append(base)
+            tt_codes.add(code)
 
             # VCP
             vcp = _detect_vcp(rows)
@@ -721,15 +732,21 @@ def run_minervini_scan(market: str = "kospi", top_n: int = 200) -> dict:
 
             if (i + 1) % 20 == 0:
                 print(f"  진행: {i+1}/{len(stocks)} | "
-                      f"TT:{len(tt_pass)} VCP:{len(vcp_pass)}")
+                      f"원본:{len(all_pass)} TT:{len(tt_pass)} VCP:{len(vcp_pass)}")
             time.sleep(0.05)
 
         except Exception as e:
             print(f"  ⚠️ {name}({code}) 오류: {e}")
+            # 오류 종목도 raw 테이블에 기록
+            all_pass.append({
+                **st, "rs": None,
+                "tt_detail": {}, "criteria": {},
+                "tt_pass": False, "data_ok": False,
+            })
             time.sleep(0.1)
 
-    print(f"  완료 — TT:{len(tt_pass)} | VCP:{len(vcp_pass)} | "
-          f"신고가+거래량:{len(breakout_pass)}")
+    print(f"  완료 — 원본:{len(all_pass)} | TT:{len(tt_pass)} | "
+          f"VCP:{len(vcp_pass)} | 신고가+거래량:{len(breakout_pass)}")
 
     return {
         "date":               today,
@@ -739,7 +756,8 @@ def run_minervini_scan(market: str = "kospi", top_n: int = 200) -> dict:
         "trend_template":     tt_pass,
         "vcp":                vcp_pass,
         "near_high_breakout": breakout_pass,
-        "all_stocks":         all_pass,   # 원본 테이블용 전체 분석 종목
+        "all_stocks":         all_pass,    # 원본 테이블용 전체 200종목
+        "tt_codes":           tt_codes,    # TT 통과 종목 코드 set
     }
 
 
@@ -763,26 +781,45 @@ def _build_minervini_html(result: dict) -> tuple:
     market_label = result.get("market_label", "코스피")
     post_title = f"📊 미너비니 SEPA 스캐너 [{market_label}] ({date}) — VCP {len(vcp)}종목 · TT {len(tt)}종목"
 
-    # 원본 테이블용: 전체 종목(TT 통과 여부 포함) 한 행 생성
-    tt_codes = {s["code"] for s in tt}
+    # 원본 테이블용: 전체 200종목 한 행 생성
+    tt_codes_set = result.get("tt_codes", {s["code"] for s in tt})
 
     def _raw_stock_row(s) -> str:
-        d         = s.get("tt_detail", {})
-        passed    = s["code"] in tt_codes
-        pct_color = "#c0392b" if float(d.get("pct_from_52w_high", 0)) > -5 else "#2c3e50"
+        d       = s.get("tt_detail", {})
+        passed  = s.get("tt_pass", False)
+        data_ok = s.get("data_ok", bool(d))
+
+        # 데이터 없는 종목 (신규 상장 / API 오류)
+        if not data_ok or not d:
+            return f"""
+          <tr style="background:#fafafa;color:#bbb">
+            <td style="border:1px solid #e0e0e0;padding:7px;text-align:center">{s.get("rank","—")}</td>
+            <td style="border:1px solid #e0e0e0;padding:7px;text-align:left">
+              <b>{s["name"]}</b><br>
+              <a href="https://finance.naver.com/item/fchart.naver?code={s["code"]}"
+                 target="_blank" style="color:#3498db;font-size:0.82em">{s["code"]}</a>
+            </td>
+            <td colspan="7" style="border:1px solid #e0e0e0;padding:7px;text-align:center;color:#ccc;font-size:0.82em">
+              데이터 부족 (상장 1년 미만 또는 조회 오류)
+            </td>
+          </tr>"""
+
+        pct_val   = d.get("pct_from_52w_high", 0) or 0
+        pct_color = "#c0392b" if float(pct_val) > -5 else "#2c3e50"
         tt_badge  = (
             '<span style="background:#e8f8f0;color:#27ae60;border:1px solid #b2dfcc;'
-            'border-radius:3px;padding:1px 6px;font-size:0.82em;font-weight:600">✓ 통과</span>'
+            'border-radius:3px;padding:2px 7px;font-size:0.82em;font-weight:600">✓ 통과</span>'
             if passed else
-            '<span style="background:#f5f5f5;color:#aaa;border:1px solid #ddd;'
-            'border-radius:3px;padding:1px 6px;font-size:0.82em">✗</span>'
+            '<span style="background:#fef2f2;color:#e74c3c;border:1px solid #fcc;'
+            'border-radius:3px;padding:2px 7px;font-size:0.82em">✗ 미통과</span>'
         )
-        rs_val  = s.get("rs", "—")
+        rs_val  = s.get("rs")
         rs_html = (f'<b style="color:#c0392b">{rs_val}</b>'
-                   if rs_val and str(rs_val) != "—" and float(rs_val) >= 70
-                   else str(rs_val))
+                   if rs_val is not None and float(rs_val) >= 70
+                   else (str(round(rs_val, 1)) if rs_val is not None else "—"))
+        row_bg  = "#f0fff4" if passed else "#fff"
         return f"""
-          <tr style="background:{'#f0fff4' if passed else '#fff'}">
+          <tr style="background:{row_bg}">
             <td style="border:1px solid #e0e0e0;padding:7px;text-align:center">{s.get("rank","—")}</td>
             <td style="border:1px solid #e0e0e0;padding:7px;text-align:left">
               <b>{s["name"]}</b><br>
@@ -790,7 +827,7 @@ def _build_minervini_html(result: dict) -> tuple:
                  target="_blank" style="color:#3498db;font-size:0.82em">{s["code"]}</a>
             </td>
             <td style="border:1px solid #e0e0e0;padding:7px;text-align:right;font-family:monospace">{_fmt_n(d.get("price"))}원</td>
-            <td style="border:1px solid #e0e0e0;padding:7px;text-align:center;color:{pct_color}">{d.get("pct_from_52w_high",0):+.1f}%</td>
+            <td style="border:1px solid #e0e0e0;padding:7px;text-align:center;color:{pct_color}">{float(pct_val):+.1f}%</td>
             <td style="border:1px solid #e0e0e0;padding:7px;text-align:right;font-family:monospace">{_fmt_n(d.get("ma50"))}</td>
             <td style="border:1px solid #e0e0e0;padding:7px;text-align:right;font-family:monospace">{_fmt_n(d.get("ma150"))}</td>
             <td style="border:1px solid #e0e0e0;padding:7px;text-align:right;font-family:monospace">{_fmt_n(d.get("ma200"))}</td>
@@ -798,8 +835,11 @@ def _build_minervini_html(result: dict) -> tuple:
             <td style="border:1px solid #e0e0e0;padding:7px;text-align:center">{tt_badge}</td>
           </tr>"""
 
-    # 원본 테이블 대상: TT 통과 + 미통과 전체 (tt_detail 있는 것만)
-    all_stocks = result.get("all_stocks", tt)   # all_stocks 키 없으면 tt로 대체
+    # 전체 200종목 원본 (순위 오름차순 정렬)
+    all_stocks = sorted(
+        result.get("all_stocks", []),
+        key=lambda x: int(x.get("rank", 9999)) if str(x.get("rank","")).isdigit() else 9999
+    ) or tt
 
     def stock_rows_html(stocks, show_vcp=False) -> str:
         rows = ""
@@ -949,14 +989,15 @@ def _build_telegram_message(result: dict) -> str:
     lines = [
         "📊 <b>미너비니 SEPA 스캐너 리포트</b>",
         f"📅 {date}  |  {result.get('market_label','코스피')} 상위 {result['scanned']}종목 분석",
-        "━━━━━━━━━━",
+        "",
         f"🌀 VCP 패턴 ({len(vcp)})",
         f"🚀 신고가+거래량 ({len(nh)})",
         f"📋 TrendTemplate ({len(tt)})",
     ]
 
     if vcp:
-        lines.append(f"\n🌀 <b>VCP 패턴 ({len(vcp)}종목)</b>")
+        lines.append("")
+        lines.append(f"🌀 <b>VCP 패턴 ({len(vcp)}종목)</b>")
         for s in vcp[:8]:
             d  = s.get("tt_detail", {})
             vd = s.get("vcp", {})
@@ -969,7 +1010,8 @@ def _build_telegram_message(result: dict) -> str:
             )
 
     if nh:
-        lines.append(f"\n🚀 <b>52주 신고가 근접+거래량 ({len(nh)}종목)</b>")
+        lines.append("")
+        lines.append(f"🚀 <b>52주 신고가 근접+거래량 ({len(nh)}종목)</b>")
         for s in nh[:8]:
             d = s.get("tt_detail", {})
             lines.append(
@@ -978,14 +1020,6 @@ def _build_telegram_message(result: dict) -> str:
                 f"고가대비 {d.get('pct_from_52w_high',0):+.1f}%  "
                 f"RS {s.get('rs','—')}"
             )
-
-    lines.append(f"\n📋 <b>TrendTemplate 통과</b> ({len(tt)}종목)")
-    for s in tt[:10]:
-        d = s.get("tt_detail", {})
-        lines.append(f"  {s.get('rank','—')}위 {s['name']}  "
-                     f"{_fmt_n(d.get('price'))}원  RS {s.get('rs','—')}")
-    if len(tt) > 10:
-        lines.append(f"  … 외 {len(tt)-10}개")
 
     return "\n".join(lines)
 
