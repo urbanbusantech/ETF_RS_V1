@@ -318,39 +318,115 @@ def _is_market_open_today() -> bool:
 
 def _get_market_top(market: str = "kospi", top_n: int = 200) -> list:
     """
-    시가총액 상위 종목 목록 수집
+    시가총액 상위 종목 목록 수집 (최대 top_n개)
     market: "kospi" (코스피) 또는 "kosdaq" (코스닥)
+
+    ※ 한투 FHPST01710000 TR은 1회 호출에 30건만 반환하는 제한이 있음.
+       네이버 금융 시가총액 순위 JSON API를 페이지 단위로 반복 호출하여
+       top_n개를 수집한다. 실패 시 한투 API로 폴백 (최대 30개).
     """
-    # 코스피: FID_INPUT_ISCD=0001, 코스닥: FID_INPUT_ISCD=1001
-    iscd = "0001" if market == "kospi" else "1001"
-    data = _kis_get(
-        "/uapi/domestic-stock/v1/ranking/market-cap",
-        "FHPST01710000",
-        {
-            "FID_COND_MRKT_DIV_CODE": "J",
-            "FID_COND_SCR_DIV_CODE":  "20171",
-            "FID_INPUT_ISCD":         iscd,
-            "FID_DIV_CLS_CODE":       "0",
-            "FID_BLNG_CLS_CODE":      "0",
-            "FID_TRGT_CLS_CODE":      "0",
-            "FID_TRGT_EXLS_CLS_CODE": "0",
-            "FID_INPUT_PRICE_1":      "",
-            "FID_INPUT_PRICE_2":      "",
-            "FID_VOL_CNT":            "",
-            "FID_INPUT_DATE_1":       "",
-        }
-    )
+    market_label = "코스피" if market == "kospi" else "코스닥"
+    sosok        = "0"     if market == "kospi" else "1"   # 네이버: 0=코스피, 1=코스닥
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                      "AppleWebKit/537.36 (KHTML, like Gecko) "
+                      "Chrome/120.0.0.0 Safari/537.36",
+        "Referer": "https://finance.naver.com/",
+    }
     stocks = []
-    for item in data.get("output", []):
-        stocks.append({
-            "rank":   item.get("data_rank", ""),
-            "code":   item.get("stck_shrn_iscd", ""),
-            "name":   item.get("hts_kor_isnm", ""),
-            "market": market,
-        })
-    return stocks[:top_n]
+    page   = 1
 
+    print(f"  [{market_label}] 종목 목록 수집 중...")
 
+    while len(stocks) < top_n:
+        try:
+            # 네이버 금융 시가총액 순위 JSON API
+            url  = "https://finance.naver.com/sise/sise_market_sum.nhn"
+            r    = requests.get(url, headers=headers,
+                                params={"sosok": sosok, "page": page}, timeout=10)
+            r.raise_for_status()
+
+            # HTML에서 종목 데이터 파싱
+            # 패턴: /item/main.naver?code=XXXXXX">종목명</a>
+            import re as _re
+            found = _re.findall(
+                r'code=(\d{6})[^"]*"[^>]*>\s*([^<]+?)\s*</a>',
+                r.text
+            )
+            # 시가총액 순위 표의 종목명 링크만 필터 (중복 제거)
+            page_stocks = []
+            seen_page   = set()
+            for code, name in found:
+                name = name.strip()
+                if len(code) == 6 and name and code not in seen_page:
+                    # 불필요한 링크(메뉴 등) 제외: 종목코드가 숫자 6자리인 것만
+                    seen_page.add(code)
+                    page_stocks.append((code, name))
+
+            if not page_stocks:
+                print(f"    {page}페이지에서 종목 없음 — 수집 종료")
+                break
+
+            for code, name in page_stocks:
+                stocks.append({
+                    "rank":   str(len(stocks) + 1),
+                    "code":   code,
+                    "name":   name,
+                    "market": market,
+                })
+                if len(stocks) >= top_n:
+                    break
+
+            print(f"    {page}페이지 완료 — 누적 {len(stocks)}개")
+            page  += 1
+            time.sleep(0.3)
+
+        except Exception as e:
+            print(f"  ⚠️ 네이버 금융 {page}페이지 오류: {e}")
+            break
+
+    # ── 폴백: 네이버 실패 시 한투 API (30개 제한) ──
+    if not stocks:
+        print(f"  ⚠️ 네이버 금융 실패 — 한투 API 폴백 (최대 30개)")
+        iscd = "0001" if market == "kospi" else "1001"
+        try:
+            data = _kis_get(
+                "/uapi/domestic-stock/v1/ranking/market-cap",
+                "FHPST01710000",
+                {
+                    "FID_COND_MRKT_DIV_CODE": "J",
+                    "FID_COND_SCR_DIV_CODE":  "20171",
+                    "FID_INPUT_ISCD":         iscd,
+                    "FID_DIV_CLS_CODE":       "0",
+                    "FID_BLNG_CLS_CODE":      "0",
+                    "FID_TRGT_CLS_CODE":      "0",
+                    "FID_TRGT_EXLS_CLS_CODE": "0",
+                    "FID_INPUT_PRICE_1":      "",
+                    "FID_INPUT_PRICE_2":      "",
+                    "FID_VOL_CNT":            "",
+                    "FID_INPUT_DATE_1":       "",
+                }
+            )
+            for item in data.get("output", []):
+                stocks.append({
+                    "rank":   item.get("data_rank", ""),
+                    "code":   item.get("stck_shrn_iscd", ""),
+                    "name":   item.get("hts_kor_isnm", ""),
+                    "market": market,
+                })
+        except Exception as e:
+            print(f"  ❌ 한투 API 폴백도 실패: {e}")
+
+    # 중복 제거 후 rank 재부여
+    seen, unique = set(), []
+    for s in stocks:
+        if s["code"] not in seen and s["code"]:
+            seen.add(s["code"])
+            s["rank"] = str(len(unique) + 1)
+            unique.append(s)
+
+    print(f"  [{market_label}] 최종 {len(unique[:top_n])}개 종목 수집 완료")
+    return unique[:top_n]
 def _get_ohlcv_kis(code: str, days: int = 260) -> list:
     """
     한투 API 일별 OHLCV 조회
@@ -741,20 +817,26 @@ def _build_minervini_html(result: dict) -> tuple:
 
       <!-- 전략 설명 -->
       <div style="background:#f0f7ff;border-left:4px solid #3498db;
-                  padding:12px 16px;margin:16px 0;font-size:0.9em;line-height:1.9">
-        <b>📌 미너비니 Trend Template 7+1조건</b><br>
-        ① 현재가 &gt; MA150, MA200 &nbsp;
-        ② MA150 &gt; MA200 &nbsp;
-        ③ MA200 상승 중 (1개월 이상) &nbsp;
-        ④ MA50 &gt; MA150 &gt; MA200 (완전 정배열) &nbsp;
-        ⑤ 현재가 &gt; MA50<br>
-        ⑥ 현재가 ≥ 52주 저가×1.30 &nbsp;
-        ⑦ 현재가 ≤ 52주 고가×1.25 &nbsp;
-        ⑧ RS 점수 ≥ 70<br><br>
-        <b>🌀 VCP 패턴 조건</b><br>
-        · 최소 3회 연속 되돌림, 각 폭이 직전보다 작을 것 (예: 18% → 12% → 6%)<br>
-        · 수축 구간마다 거래량도 감소 (공급 소멸) · 마지막 수축 ≤ 10%<br>
-        · 피벗 대비 현재가 -3% 이내 · 돌파 시 거래량 평균×1.4 이상 🔥
+                  padding:12px 16px;margin:16px 0;font-size:0.9em;line-height:1.6">
+        <b>📌 미너비니 Trend Template 7+1조건</b>
+        <ol style="margin:8px 0 0 0;padding-left:1.4em;line-height:2.0">
+          <li>현재가 &gt; MA150, MA200</li>
+          <li>MA150 &gt; MA200</li>
+          <li>MA200 상승 중 (1개월 이상)</li>
+          <li>MA50 &gt; MA150 &gt; MA200 <b>(완전 정배열)</b></li>
+          <li>현재가 &gt; MA50</li>
+          <li>현재가 ≥ 52주 저가 × 1.30</li>
+          <li>현재가 ≤ 52주 고가 × 1.25</li>
+          <li>RS 점수 ≥ 70</li>
+        </ol>
+        <b style="display:block;margin-top:12px">🌀 VCP 패턴 추가 조건</b>
+        <ul style="margin:6px 0 0 0;padding-left:1.4em;line-height:2.0">
+          <li>최소 3회 연속 되돌림, 각 폭이 직전보다 작을 것 (예: 18% → 12% → 6%)</li>
+          <li>수축 구간마다 거래량도 감소 (공급 소멸)</li>
+          <li>마지막 수축 ≤ 10% (타이트한 베이스)</li>
+          <li>피벗 대비 현재가 -3% 이내</li>
+          <li>돌파 시 거래량 ≥ 평균 × 1.4 🔥</li>
+        </ul>
       </div>
 
       {section_html(f"🌀 VCP 패턴 감지 종목 ({len(vcp)}개)", vcp, show_vcp=True)}
@@ -782,7 +864,7 @@ def _build_telegram_message(result: dict) -> str:
         "📊 <b>미너비니 SEPA 스캐너 리포트</b>",
         f"📅 {date}  |  {result.get('market_label','코스피')} 상위 {result['scanned']}종목 분석",
         f"✅ TrendTemplate <b>{len(tt)}</b>  🌀 VCP <b>{len(vcp)}</b>  🚀 신고가+거래량 <b>{len(nh)}</b>",
-        "━━━━━━━━━━━━━━━━━━━━",
+        "━━━━━━━━━━",
     ]
 
     if vcp:
@@ -822,7 +904,7 @@ def _build_telegram_message(result: dict) -> str:
         lines.append(f"  … 외 {len(tt)-10}개")
 
     lines += [
-        "\n━━━━━━━━━━━━━━━━━━━━",
+        "\n━━━━━━━━━━",
         "⚠️ 참고용 정보. 투자 권유 아님.",
     ]
     return "\n".join(lines)
