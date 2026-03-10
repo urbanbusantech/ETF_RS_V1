@@ -263,6 +263,7 @@ def generate_html_report(df):
                 text-align: center;
                 border-collapse: collapse;
                 margin-top: 20px;
+                font-size: 0.9em; /* 💡 ETF 표와 동일하게 글씨 크기를 0.9em으로 맞춥니다 */
             }}
             .momentum-table th {{
                 background-color: #f8f9fa;
