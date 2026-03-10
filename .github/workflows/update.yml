@@ -3,7 +3,7 @@ name: Update ETF Data for Streamlit & Blog
 on:
   schedule:
     - cron: '0 7 * * 1-5' # 한국 시간 오후 5시
-  workflow_dispatch: 
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -29,11 +29,15 @@ jobs:
           pip install -r requirements.txt
 
       - name: 데이터 업데이트 스크립트 및 블로그 자동 포스팅 실행
-        env: # 💡 [바로 이 부분입니다!] 깃허브 금고에 있는 비밀키를 파이썬에게 전달합니다.
+        env:
           BLOGGER_BLOG_ID: ${{ secrets.BLOGGER_BLOG_ID }}
           BLOGGER_CLIENT_ID: ${{ secrets.BLOGGER_CLIENT_ID }}
           BLOGGER_CLIENT_SECRET: ${{ secrets.BLOGGER_CLIENT_SECRET }}
           BLOGGER_REFRESH_TOKEN: ${{ secrets.BLOGGER_REFRESH_TOKEN }}
+          # [추가] Refresh Token 자동 갱신 시 GitHub Secret을 업데이트하는 데 필요
+          GH_PAT: ${{ secrets.GH_PAT }}
+
+      # GITHUB_REPOSITORY는 GitHub Actions에서 자동으로 주입되므로 별도 설정 불필요
         run: python update_data.py
 
       - name: 생성된 CSV 파일 깃허브에 자동 커밋 & 푸시
