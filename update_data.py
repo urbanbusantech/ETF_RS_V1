@@ -364,7 +364,7 @@ def export_data(df, bm_1m, bm_3m, bm_1y):
     </div>
     """
 
-    category_labels = ["상대강도", "ETF"]
+    category_labels = ["상대강도"]
     post_to_blogger(post_title, html_content, category_labels)
 
 
