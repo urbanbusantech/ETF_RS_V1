@@ -3,6 +3,7 @@ pandas
 finance-datareader
 streamlit>=1.32.0
 google-api-python-client
+google-auth
 google-auth-httplib2
 google-auth-oauthlib
 PyNaCl
