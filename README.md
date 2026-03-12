@@ -2,7 +2,6 @@
 
 대한민국 상장 주식형 ETF를 대상으로 마크 미너비니(Mark Minervini)의 **상대강도(Relative Strength)** 방법론을 적용해 시장 주도 ETF를 자동 분석하고, Streamlit 대시보드 및 구글 블로그에 매일 자동 게시하는 프로젝트입니다.
 
-[![Update ETF Data](https://github.com/{YOUR_USERNAME}/{YOUR_REPO}/actions/workflows/update.yml/badge.svg)](https://github.com/{YOUR_USERNAME}/{YOUR_REPO}/actions/workflows/update.yml)
 
 ---
 
