@@ -354,8 +354,8 @@ def generate_html_report(df):
     </div>
     """
     
-    post_title = f"🚀 [모멘텀 인댁스 랩] 52주 신고가 주도주 랭킹 ({today_str})"
-    post_to_blogger(post_title, html_content, labels=["52주신고가", "모멘텀", "주도주뉴스"])
+    post_title = f"🚀 [모멘텀] 52주 신고가 주도주 랭킹 ({today_str})"
+    post_to_blogger(post_title, html_content, labels=["52주신고가"])
     
     file_name = f"52주_신고가_모멘텀_{today_str}.html"
     with open(file_name, 'w', encoding='utf-8') as f:
