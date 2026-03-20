@@ -329,12 +329,12 @@ def generate_html_report(df):
         <h3>💡 시장의 주도주를 찾아라: 52주 신고가 리포트</h3>
         <div class="content-box">
             본 리포트는 강력한 모멘텀 추세에 기반하여, 1년(52주) 내 가장 폭발적인 상승 에너지를 보여주며 새로운 가격대를 개척하고 있는 핵심 주도주 후보군을 선별합니다. 매일 구글 파이낸스(Google Finance) 실시간 엔진과 연동되어 객관적이고 정확한 시세 데이터를 바탕으로 작성됩니다.
-        </div>
+        </div>  <!--more-->
 
         <h3>🤖 오늘의 섹터 모멘텀 브리핑</h3>
         <div class="briefing-box">
             {briefing_text}
-        </div>   <!--more-->
+        </div>   
 
         <h3>📰 주도주 모멘텀 핵심 뉴스 (거래량 Top 2)</h3>
         <div class="news-box">
