@@ -334,7 +334,7 @@ def generate_html_report(df):
         <h3>🤖 오늘의 섹터 모멘텀 브리핑</h3>
         <div class="briefing-box">
             {briefing_text}
-        </div>
+        </div>   <!--more-->
 
         <h3>📰 주도주 모멘텀 핵심 뉴스 (거래량 Top 2)</h3>
         <div class="news-box">
