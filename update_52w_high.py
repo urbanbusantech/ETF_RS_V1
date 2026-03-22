@@ -4,8 +4,6 @@ import urllib.parse
 import requests
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
-from bs4 import BeautifulSoup  # 💡 웹 스캔을 위한 라이브러리
-import time
 
 # 구글 인증 라이브러리
 from google.oauth2.credentials import Credentials
@@ -13,47 +11,6 @@ from googleapiclient.discovery import build
 
 GOOGLE_SHEET_ID = os.environ.get('GOOGLE_SHEET_ID')
 GID = "0" 
-
-def get_related_etfs(stock_code):
-    """네이버 금융에서 해당 종목이 포함된 관련 ETF 상위 3개를 가져옵니다."""
-    url = f"https://finance.naver.com/item/main.naver?code={stock_code}"
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-    
-    try:
-        res = requests.get(url, headers=headers, timeout=5)
-        soup = BeautifulSoup(res.text, 'html.parser')
-        
-        etf_list = []
-        # 1. 정석 방법: 'tb_etf' 클래스를 가진 테이블 찾기
-        etf_table = soup.find('table', class_='tb_etf')
-        if etf_table:
-            rows = etf_table.find_all('tr')
-            for row in rows:
-                title_td = row.find('td', class_='title')
-                if title_td and title_td.a:
-                    etf_list.append(title_td.a.text.strip())
-                    
-        # 2. 폴백 방법: 우측 탭의 구조가 바뀌었을 경우를 대비해 ETF 브랜드명으로 찾기
-        if not etf_list:
-            etf_brands = ['KODEX', 'TIGER', 'ACE', 'SOL', 'KBSTAR', 'ARIRANG', 'HANARO', 'KOSEF', 'TIMEFOLIO', 'PLUS']
-            for a in soup.find_all('a'):
-                text = a.text.strip()
-                if any(brand in text for brand in etf_brands) and len(text) > 4:
-                    etf_list.append(text)
-        
-        # 0.2초 대기 (네이버 서버 과부하 방지)
-        time.sleep(0.2)
-        
-        if etf_list:
-            # 중복 제거 (순서 유지)
-            seen = set()
-            unique_etfs = [x for x in etf_list if not (x in seen or seen.add(x))]
-            return ", ".join(unique_etfs[:3])
-            
-    except Exception as e:
-        print(f"⚠️ ETF 파싱 에러({stock_code}): {e}")
-        
-    return "-"
 
 def get_data_from_google_sheet():
     """공개된 구글 스프레드시트를 CSV 형태로 즉시 읽어옵니다."""
@@ -98,10 +55,6 @@ def get_data_from_google_sheet():
         result_df = result_df.drop(columns=['정렬용_거래량'])
         
         result_df['종목코드'] = result_df['종목코드'].apply(lambda x: str(x).replace('.0', '').zfill(6))
-        
-        if not result_df.empty:
-            print(f"🔍 {len(result_df)}개 종목에 대한 관련 ETF 정보를 수집합니다. (약 10~20초 소요)")
-            result_df['포함 ETF (상위 3개)'] = result_df['종목코드'].apply(get_related_etfs)
         
         print(f"✅ 분석 완료! 스팩/리츠 제외 총 {len(result_df)}개의 종목 발견.")
         return result_df
@@ -241,7 +194,6 @@ def generate_html_report(df):
         
         table_html = table_df.to_html(index=False, escape=False, border=0, classes='momentum-table', justify='center')
 
-    # [핵심 수정] html, head, body 태그를 삭제하고 깔끔한 div 컨테이너로 감쌉니다.
     html_content = f"""
     <div class="momentum-container" style="width: 100%; max-width: 1000px; margin: 0 auto 30px auto; padding: 0 10px; box-sizing: border-box; text-align: center; font-family: 'Helvetica Neue', Arial, sans-serif;">
         <style>
@@ -317,9 +269,6 @@ def generate_html_report(df):
                 border: 1px solid #e0e0e0;
                 vertical-align: middle;
             }}
-            .momentum-table td:last-child {{
-                text-align: left;
-            }}
             .momentum-table tr:hover {{
                 background-color: #f1f4f8;
                 transition: background-color 0.2s ease;
@@ -329,9 +278,7 @@ def generate_html_report(df):
         <h3>💡 시장의 주도주를 찾아라: 52주 신고가 리포트</h3>
         <div class="content-box">
             본 리포트는 강력한 모멘텀 추세에 기반하여, 1년(52주) 내 가장 폭발적인 상승 에너지를 보여주며 새로운 가격대를 개척하고 있는 핵심 주도주 후보군을 선별합니다. 매일 구글 파이낸스(Google Finance) 실시간 엔진과 연동되어 객관적이고 정확한 시세 데이터를 바탕으로 작성됩니다.
-        </div>  <!--more-->
-
-        <h3>🤖 오늘의 섹터 모멘텀 브리핑</h3>
+        </div>  <h3>🤖 오늘의 섹터 모멘텀 브리핑</h3>
         <div class="briefing-box">
             {briefing_text}
         </div>   
