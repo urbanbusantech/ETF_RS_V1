@@ -1,13 +1,9 @@
-name: Update ETF Data for Streamlit & Blog
+name: 미너비니 주도주 단독 포스팅
 
 on:
   schedule:
-    # 한국 시간(KST) 오후 4시 30분 (장 마감 데이터 반영을 위해 시간 조정)
-    - cron: '30 7 * * 1-5' 
-  workflow_dispatch:
-
-permissions:
-  contents: write
+    - cron: '30 7 * * 1-5' # 기존 스케줄 유지 (한국시간 오후 4시 30분)
+  workflow_dispatch: # 언제든 수동으로 실행할 수 있는 버튼
 
 jobs:
   build:
@@ -16,8 +12,6 @@ jobs:
     steps:
       - name: 저장소 체크아웃
         uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
 
       - name: 파이썬 환경 설정
         uses: actions/setup-python@v4
@@ -29,41 +23,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # -------------------------------------------------------------
-      # 1. 기존 파이프라인: ETF 데이터 업데이트 및 블로그 포스팅
-      # -------------------------------------------------------------
-      - name: 데이터 업데이트 스크립트 및 블로그 자동 포스팅 실행
-        env:
-       #   BLOGGER_BLOG_ID: ${{ secrets.BLOGGER_BLOG_ID }}
-       #   BLOGGER_CLIENT_ID: ${{ secrets.BLOGGER_CLIENT_ID }}
-       #   BLOGGER_CLIENT_SECRET: ${{ secrets.BLOGGER_CLIENT_SECRET }}
-       #   BLOGGER_REFRESH_TOKEN: ${{ secrets.BLOGGER_REFRESH_TOKEN }}
-       #   GH_PAT: ${{ secrets.GH_PAT }}
-        run: python update_data.py
-
-      - name: 생성된 CSV 파일 깃허브에 자동 커밋 & 푸시
-        run: |
-       #   git config --global user.name 'github-actions[bot]'
-       #   git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-       #   git add etf_data.csv
-       #   git commit -m "Auto-update ETF data" || echo "No changes to commit"
-       #   git push
-
-      # -------------------------------------------------------------
-      # 2. 기존 파이프라인: 52주 신고가 주도주 분석 및 블로그 자동 포스팅
-      # -------------------------------------------------------------
-      - name: 52주 신고가 분석 및 블로그 자동 포스팅
-        env:
-        #  GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
-        #  BLOGGER_BLOG_ID: ${{ secrets.BLOGGER_BLOG_ID }}
-        #  BLOGGER_CLIENT_ID: ${{ secrets.BLOGGER_CLIENT_ID }}
-        #  BLOGGER_CLIENT_SECRET: ${{ secrets.BLOGGER_CLIENT_SECRET }}
-        #  BLOGGER_REFRESH_TOKEN: ${{ secrets.BLOGGER_REFRESH_TOKEN }}
-        run: python update_52w_high.py
-
-      # -------------------------------------------------------------
-      # 3. 신규 파이프라인: 미너비니 RS 100+ (코스피/코스닥 분리) 포스팅
-      # -------------------------------------------------------------
       - name: 미너비니 차트 분석 및 블로그 자동 포스팅 (코스피/코스닥 분리)
         env:
           GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
