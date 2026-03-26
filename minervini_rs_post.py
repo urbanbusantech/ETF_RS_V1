@@ -55,7 +55,9 @@ def get_chart_base64(ticker, name):
     buf = io.BytesIO()
     fig, axlist = mpf.plot(plot_df, type='candle', addplot=ap, style='charles', returnfig=True, figsize=(10, 5))
     axlist[0].yaxis.set_major_formatter(mticker.StrMethodFormatter('{x:,.0f}'))
-    fig.savefig(buf, format='png', bbox_inches='tight')
+    
+    # 📌 수정 완료: dpi=60 설정으로 이미지 용량을 줄여 API 400 에러(용량초과) 방지
+    fig.savefig(buf, format='png', bbox_inches='tight', dpi=60)
     plt.close(fig)
     return base64.b64encode(buf.getvalue()).decode('utf-8')
 
@@ -70,7 +72,15 @@ def post_to_blogger(title, content, labels):
     if not all([BLOG_ID, CLIENT_ID, CLIENT_SECRET, REFRESH_TOKEN]): return
     creds = Credentials(None, refresh_token=REFRESH_TOKEN, token_uri='https://oauth2.googleapis.com/token', client_id=CLIENT_ID, client_secret=CLIENT_SECRET)
     service = build('blogger', 'v3', credentials=creds)
-    service.posts().insert(blogId=BLOG_ID, body={"title": title, "content": content, "labels": labels}).execute()
+    
+    # 📌 수정 완료: API 규격에 맞게 kind 와 isDraft 명시
+    body = {
+        "kind": "blogger#post",
+        "title": title,
+        "content": content,
+        "labels": labels
+    }
+    service.posts().insert(blogId=BLOG_ID, body=body, isDraft=False).execute()
 
 def process_market(market_label, df_market, index_rs_val):
     """시장별 필터링 및 포스팅 실행"""
