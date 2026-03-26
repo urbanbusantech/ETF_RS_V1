@@ -9,3 +9,4 @@ google-auth-oauthlib
 PyNaCl
 mplfinance
 matplotlib
+yfinance
