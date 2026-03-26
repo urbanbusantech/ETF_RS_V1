@@ -50,14 +50,25 @@ jobs:
           git push
 
       # -------------------------------------------------------------
-      # 2. 신규 파이프라인: 52주 신고가 주도주 분석 및 블로그 자동 포스팅
+      # 2. 기존 파이프라인: 52주 신고가 주도주 분석 및 블로그 자동 포스팅
       # -------------------------------------------------------------
       - name: 52주 신고가 분석 및 블로그 자동 포스팅
         env:
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
           BLOGGER_BLOG_ID: ${{ secrets.BLOGGER_BLOG_ID }}
           BLOGGER_CLIENT_ID: ${{ secrets.BLOGGER_CLIENT_ID }}
           BLOGGER_CLIENT_SECRET: ${{ secrets.BLOGGER_CLIENT_SECRET }}
           BLOGGER_REFRESH_TOKEN: ${{ secrets.BLOGGER_REFRESH_TOKEN }}
-          # 💡 깃허브 Secrets에 저장된 구글 시트 ID를 불러옵니다.
-          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
         run: python update_52w_high.py
+
+      # -------------------------------------------------------------
+      # 3. 신규 파이프라인: 미너비니 RS 100+ (코스피/코스닥 분리) 포스팅
+      # -------------------------------------------------------------
+      - name: 미너비니 차트 분석 및 블로그 자동 포스팅 (코스피/코스닥 분리)
+        env:
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          BLOGGER_BLOG_ID: ${{ secrets.BLOGGER_BLOG_ID }}
+          BLOGGER_CLIENT_ID: ${{ secrets.BLOGGER_CLIENT_ID }}
+          BLOGGER_CLIENT_SECRET: ${{ secrets.BLOGGER_CLIENT_SECRET }}
+          BLOGGER_REFRESH_TOKEN: ${{ secrets.BLOGGER_REFRESH_TOKEN }}
+        run: python minervini_rs_post.py
