@@ -34,31 +34,31 @@ jobs:
       # -------------------------------------------------------------
       - name: 데이터 업데이트 스크립트 및 블로그 자동 포스팅 실행
         env:
-          BLOGGER_BLOG_ID: ${{ secrets.BLOGGER_BLOG_ID }}
-          BLOGGER_CLIENT_ID: ${{ secrets.BLOGGER_CLIENT_ID }}
-          BLOGGER_CLIENT_SECRET: ${{ secrets.BLOGGER_CLIENT_SECRET }}
-          BLOGGER_REFRESH_TOKEN: ${{ secrets.BLOGGER_REFRESH_TOKEN }}
-          GH_PAT: ${{ secrets.GH_PAT }}
+       #   BLOGGER_BLOG_ID: ${{ secrets.BLOGGER_BLOG_ID }}
+       #   BLOGGER_CLIENT_ID: ${{ secrets.BLOGGER_CLIENT_ID }}
+       #   BLOGGER_CLIENT_SECRET: ${{ secrets.BLOGGER_CLIENT_SECRET }}
+       #   BLOGGER_REFRESH_TOKEN: ${{ secrets.BLOGGER_REFRESH_TOKEN }}
+       #   GH_PAT: ${{ secrets.GH_PAT }}
         run: python update_data.py
 
       - name: 생성된 CSV 파일 깃허브에 자동 커밋 & 푸시
         run: |
-          git config --global user.name 'github-actions[bot]'
-          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          git add etf_data.csv
-          git commit -m "Auto-update ETF data" || echo "No changes to commit"
-          git push
+       #   git config --global user.name 'github-actions[bot]'
+       #   git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+       #   git add etf_data.csv
+       #   git commit -m "Auto-update ETF data" || echo "No changes to commit"
+       #   git push
 
       # -------------------------------------------------------------
       # 2. 기존 파이프라인: 52주 신고가 주도주 분석 및 블로그 자동 포스팅
       # -------------------------------------------------------------
       - name: 52주 신고가 분석 및 블로그 자동 포스팅
         env:
-          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
-          BLOGGER_BLOG_ID: ${{ secrets.BLOGGER_BLOG_ID }}
-          BLOGGER_CLIENT_ID: ${{ secrets.BLOGGER_CLIENT_ID }}
-          BLOGGER_CLIENT_SECRET: ${{ secrets.BLOGGER_CLIENT_SECRET }}
-          BLOGGER_REFRESH_TOKEN: ${{ secrets.BLOGGER_REFRESH_TOKEN }}
+        #  GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+        #  BLOGGER_BLOG_ID: ${{ secrets.BLOGGER_BLOG_ID }}
+        #  BLOGGER_CLIENT_ID: ${{ secrets.BLOGGER_CLIENT_ID }}
+        #  BLOGGER_CLIENT_SECRET: ${{ secrets.BLOGGER_CLIENT_SECRET }}
+        #  BLOGGER_REFRESH_TOKEN: ${{ secrets.BLOGGER_REFRESH_TOKEN }}
         run: python update_52w_high.py
 
       # -------------------------------------------------------------
